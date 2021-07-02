@@ -1,0 +1,256 @@
+---
+title: 'Comparação entre os modelos de seleção genômica RRblup e GBlup'
+author: 'Renato Gonçalves de Oliveira'
+date: "`r format(Sys.time(), '%d de %B de %Y')`"
+
+output:
+  word_document: default
+  html_notebook: default
+---
+Dentre os modelos disponíveis para a construção de modelos para a seleção genômica, os modelos RRblup e GBlup forma escolhidos para que suas saídas fossem comparadas neste trabalho. A equação de relação entre os dois modelos é descrita abaixo:
+
+\[\hat{m} = (Z´Z)*Z´\hat{g}\]
+
+Onde:
+
+* \(\hat{m}\): efeito estimado dos marcadores; 
+* Z: matriz dos estados dos marcadores para cada genótipo; 
+* \(\hat{g}\): genomic estimated breeding values (GEBV´s).
+
+O modelo RRblup fornece com saída os valores de \(\hat{m}\). Esses valores correspondem aos efeitos estimados para os marcadores utilizados no modelo. O modelo GBlup apresenta como saída os valores de \(\hat{g}\), que são os valores dos Blups estimados pelo modelo, ou GBlups. Esses valores correspondem aos valores genômicos preditos, ou GEBV´s. Para que se obtenham os valores os valores de GEBV´s à partir do modelo RRblup é preciso multiplicar os valores estimados dos efeitos dos marcadores, \(\hat{m}\), pelo estado desses marcadores nos genótipos. O somatório desses efeitos deve ser acrescido do valor do instercepto estimado, \(\hat{\beta}\). Dessa forma, a relação entre os valores da saída do modelo RRblup e GBlup pode ser descrita pela equação abaixo:
+
+\[RRblup = (Z´Z)*Z´GBlup\]
+
+
+# Pacotes utilizados na análise
+```{r}
+library(rrBLUP) 
+library(bWGR)
+library(lattice)
+
+```
+
+
+# Arquivos de dados
+Dois conjuntos de dados serão utilizados para a comparação dos modelos de seleção genômica. O arquivo de dados gentípicos é composto pelo resultado da genotipagem de 2025 indivíduos utilizando 453 marcadores. O arquivos de dados fenotípicos é composto por 5 caráteres avaliados em 1000 indivíduos.
+```{r}
+gen <- read.table("genotype.txt",header=TRUE)
+phe <- read.table("phenotype.txt",header=TRUE)
+
+```
+
+
+## Arquivo de dados genotípicos
+Corresponde aos dados dos estados dos marcadores dos indvíduos genotipados.
+```{r}
+gen[1:10, 1:10]
+
+```
+
+
+## Arquivo de dados fenotípicos
+Dos 5 caráteres avaliados do arquivos de dados genotípicos o que será utilizado será o p530.
+```{r}
+phe[1:10, ]
+
+```
+
+
+# Informações do arquivo de dados
+
+  O conjunto de dados utilizados para comparação dos dois modelos de seleção genômica possui as seguintes informações:
+
+* n.° de machos: 5
+* n.° de fêmeas: 20
+* n.° de indivíduos fenotipados: 1000
+* n.° de indivíduos genotipados: 2025
+* tamanho efetivo da população (Ne): 16
+* herdabilidade para o fenótipo \( h^2a\): 0.47
+* acurácia da seleção fenotípica: 0.73
+* comprimento do genoma: 500 cM
+* acurácia esperada para a seleção genômica: 0.67
+
+# Modelo RRblup
+
+
+## Matriz M
+A matriz M, também conhecida como matriz Z, é a matriz que corresponde aos estados dos marcadores para cada um dos indivíduos genotipados. Para criar a matriz M foram colocados o nome dos genòtipos na linhas, usando os nomes do arquivos de dados fenotípicos, e o nome dos marcadores nas colunas.
+```{r}
+M <- gen[as.character(phe$ind),]
+M[1:15,1:15]
+
+```
+
+
+## População de treinamento
+Para a formação da população de treinamento foram selecionados 800 indivíduos, do indivíduo 201 até o indivíduo 1000 da matriz M.
+```{r}
+poptr <- rownames(M)[201:1000]
+
+```
+
+
+## População de validação
+Para a população de validação foram selecionados os indivíduos de 1 a 200 da matriz M.
+```{r}
+popvl <- rownames(M)[1:200]
+
+```
+
+
+## Valores fenotípicos da população de treinamento
+Valores fenotípicos para o caráter p530 para a população de treinamento.
+```{r}
+g.tr <- phe[phe$ind%in%poptr,]$p530
+
+```
+
+
+## Valores fenotípicos da população de validação
+Valores fenotípicos para o caráter p530 para a população de validação.
+```{r}
+g.vl <- phe[phe$ind%in%popvl,]$p530
+
+```
+
+
+## Treinamento do modelo
+Treinamento do modelo de selção genômica utilizando a população de treinamento
+```{r}
+train <- mixed.solve(g.tr,M[poptr,])
+str(train)
+
+```
+
+
+## Catálogo de marcas 
+Vetor contendo os efeitos estimados para cada um dos marcadores utilizados.
+```{r}
+m.cat <- train$u
+
+```
+
+## GEBV´s
+Através da multiplicação da matriz dos estados pela matriz dos efeitos dos marcadores tem-se a matriz com o somatório dos efeitos dos marcadores em função do estado desses marcadores em cada indivíduo. O inertcepto é dado pela média dos GEBV´s estimados na população de treinamento. A soma do valor do efeito dos marcadores corresponde ao GEBV dos indivíduos da popualção de treinamento, ou \(\hat{g}\).
+```{r}
+g.hat <- as.matrix(M[popvl,])%*%m.cat + mean(g.tr)
+
+```
+
+
+## Acurácia realizada
+A acurácia realizada corresponde a correlção entre os valores dos GEBV´s, ou \(\hat{g}\), ,a população de teste e os valores fenotípicos da população de validação.
+```{r}
+cor(g.hat,g.vl)
+
+```
+Para esse conjunto de dados esse valor foi 0.56. Esse valor ficou próximo do valor da acurácia esperada para esse conjunto de genótipos que foi de 0.67.
+
+
+## Valores fenotípicos vs preditos
+O gráfico abaixo mostra os valores fenotípicos versus os valores preditos, GEBV´s, para a população de validação. a linha azul marca a exatidão dos valores preditos e a linha vermelha a precisão desses valores. Como os valores foram estimados utilizando modelos mistos há um encurtamento esperado para os vlores preditos em relação aos valores fentípicos. 
+
+```{r}
+plot(g.hat,g.vl,xlim=c(10,45),ylim=c(10,45), xlab = 'GEBV´s', ylab = 'Valores fenotípicos', main = 'Valores Fenotípicos vs GEBV´s')
+abline(0,1,col="blue")
+abline(lm(g.vl~g.hat), col="red", lwd=3, lty=2)
+
+```
+
+
+## Eficiência do modelo RRblup
+A eficiência do modelo de seleção genômica é dada pela relação entre a acurácia otida pelo modelo e a  acurácia esperada para o conjunto de dados. Se um modelo consegue capturar toda a acurácia esperada sua eficiênica é de 100%. No caso do modelo RRblup para esse conujnto de dados a eficiência foi de 0.84, ou seja, o modelo conseguiu capturar 84.27% da acurácia esperada para esse conjunto de dados.
+```{r}
+cor(g.hat,g.vl)/0.67 
+
+```
+
+
+
+
+
+
+
+
+
+# Modelo GBlup
+Para o cálculo dos valores preditos para o modelo GBlup foi utilizada a função **emML** do pacote **bWGR**. Essa função estima o valor dos dos efeitos dos marcadores e estima os valores preditos utilizando a matriz M.
+
+
+## Ajuste do modelo
+```{r}
+train1 <- emML(g.tr,as.matrix(M[poptr,]))
+str(train1)
+
+```
+## Catálogo de marcas 
+Vetor contendo os efeitos estimados para cada um dos marcadores utilizados.
+```{r}
+m.cat1 <- train1$b
+
+```
+
+
+## GEBV´s
+Através da multiplicação da matriz dos estados pela matriz dos efeitos dos marcadores tem-se a matriz com o somatório dos efeitos dos marcadores em função do estado desses marcadores em cada indivíduo. O inertcepto é dado pela média dos GEBV´s estimados na população de treinamento. A soma do valor do efeito dos marcadores corresponde ao GEBV dos indivíduos da popualção de treinamento, ou \(\hat{g}\).
+```{r}
+g.hat1 <- as.matrix(M[popvl,])%*%m.cat1 + mean(g.tr)
+
+```
+
+
+## Acurácia realizada
+A acurácia realizada corresponde a correlção entre os valores dos GEBV´s, ou \(\hat{g}\), ,a população de teste e os valores fenotípicos da população de validação.
+```{r}
+cor(g.hat1, g.vl)
+
+```
+
+
+## Valores fenotípicos vs preditos
+O gráfico abaixo mostra os valores fenotípicos versus os valores preditos, GEBV´s, para a população de validação. a linha azul marca a exatidão dos valores preditos e a linha vermelha a precisão desses valores. Assim como no modelo anterior os valores foram estimados utilizando modelos mistos há um encurtamento esperado para os valores preditos em relação aos valores fentípicos. 
+```{r}
+plot(g.hat1, g.vl, xlim=c(10,45), ylim=c(10,45), xlab='GEBV´s', ylab='Valores fenotípicos', main='Valores Fenotípicos vs GEBV´s')
+abline(0,1,col="blue")
+abline(lm(g.vl~g.hat1), col="red", lwd=3, lty=2)
+
+```
+
+
+## Eficiência do modelo GBlup
+No caso do modelo GBlup para esse conujnto de dados a eficiência foi de 0.86, ou seja, o modelo conseguiu capturar 86.55% da acurácia esperada para esse conjunto de dados.
+```{r}
+cor(g.hat1, g.vl)/0.67
+
+```
+
+
+# Correalção entre os valores preditos
+A correlação entre os valores preditos pelo modelo RRblup e GBlup foi de 0.99.
+```{r}
+cor(g.hat, g.hat1)
+
+```
+
+
+# Correlação entre os efeitos dos marcadores
+A correlação entre os valores estimados para os efeitos dos marcadores pelo modelo RRblup e GBlup foi de 0.99.
+```{r}
+cor(m.cat, m.cat1)
+
+```
+
+
+# Conclusões
+Os valores de acurácia alcançada e de eficiência do modelo obtidos pelo modelo RRblup foram de 0.56465 e 0.8427612, respectivamente. Enquanto para o modelo GBlup esses valores foram de 0.5668707 e 0.8460756. Os valores foram muito próximos e só divergiram após a 3° casa decimal.
+
+A correlção entre os valores estimados para os efeitos dos marcadores para os dois modelos foi de 0.99. E a correlação entre os valores preditos para os dois modelos foi de 0.99. 
+
+Diante disso, pode-se dizer que os dois modelos chegaram a resultados bastante próximos.
+
+
+
+
+
+
+
